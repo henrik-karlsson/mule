@@ -4,20 +4,20 @@
  * (or other master license agreement) separately entered into in writing between you and
  * MuleSoft. If such an agreement is not in place, you may not use the software.
  */
-import java.util.jar.JarEntry
-import java.util.jar.JarFile
-import groovy.transform.Field
+
 import groovy.transform.AutoClone
+import groovy.transform.Field
 
 @Field String GET_PLUGIN = "org.apache.maven.plugins:maven-dependency-plugin:2.8:get"
 @Field long FIVE_MINUTES = 300000
-@FIELD int INVALID_ARGUMENTS = 1
+@Field int INVALID_ARGUMENTS = 1
 @Field String help = '\nDeploys to a remote Maven repository Mule CE and EE artifacts including distributions, poms, jars, test jars, javadoc jars and source jars.\n'
 @Field String ceRepoId
 @Field String ceRepoUrl
 @Field Boolean deployDistro
 @Field String version
 @Field String m2repo
+@Field deploySignatures = true
 @Field packagingExceptions = ['geomail': 'war']
 @Field deployExceptions = ['archetypes', 'integration-axis', 'loanbroker-legacy']
 @Field artifactIdExceptions = ['jboss-transactions'      : 'mule-module-jbossts',
@@ -30,7 +30,7 @@ import groovy.transform.AutoClone
 
 parseArguments(args)
 deployJars()
-if (deployDistro) { deployCeDistributions(version) }
+if (deployDistro) { deployCeDistributions() }
 
 def parseArguments(def arguments)
 {
@@ -43,6 +43,7 @@ def parseArguments(def arguments)
     version = options.v
     m2repo = options.r
     deployDistro = options.d ? true : false
+    deploySignatures = options.s ? false : true
     ceRepoId = options.ce.split('::')[0]
     ceRepoUrl = options.ce.split('::')[1]
 }
@@ -55,6 +56,7 @@ private OptionAccessor parseOptions(arguments)
     cliBuilder.h(longOpt: "help", "show usage info")
     cliBuilder.d(longOpt: "deploy-distributions", "Deploy Distribution Artifacts")
     cliBuilder.ce(longOpt: "ce-repository", required: true, args: 1, "CE Remote repository (id::repository)")
+    cliBuilder.s(longOpt: "skip-signatures", required: false, args: 0, "Configures the script to skip signature upload")
     return cliBuilder.parse(arguments)
 }
 
@@ -105,11 +107,14 @@ protected void deployToRemote(String repoUrl, String repoId, String groupId, Str
 
     log("Deploying artifact group: ${artifact}")
 
-    if (getDependency(pom, 'target/pom') && getDependency(artifact, 'target/artifact') && getDependency(signature, 'target/signature') && getDependency(pomSignature, 'target/pom-signature'))
+    if (getDependency(pom, 'target/pom') && getDependency(artifact, 'target/artifact'))
     {
-        assert deployFile(pomSignature, 'target/pom', 'target/pom-signature', repoUrl, repoId): "Failed to deploy [${pomSignature}]"
+        if (deploySignatures && getDependency(pomSignature, 'target/pom-signature')  && getDependency(signature, 'target/signature'))
+        {
+            assert deployFile(pomSignature, 'target/pom', 'target/pom-signature', repoUrl, repoId): "Failed to deploy [${pomSignature}]"
+            assert deployFile(signature, 'target/pom', 'target/signature', repoUrl, repoId): "Failed to deploy [${signature}]"
+        }
         assert deployFile(artifact, 'target/pom', 'target/artifact', repoUrl, repoId): "Failed to deploy [${artifact}]"
-        assert deployFile(signature, 'target/pom', 'target/signature', repoUrl, repoId): "Failed to deploy [${signature}]"
     }
     else
     {
@@ -119,10 +124,13 @@ protected void deployToRemote(String repoUrl, String repoId, String groupId, Str
     ['javadoc', 'tests', 'sources', 'test-sources'].each { it ->
         optional = artifact.having(classifier: it)
         signature = optional.having(packaging: packaging + '.asc')
-        if (getDependency(optional, "target/${it}") && getDependency(signature, "target/${it}-signature"))
+        if (getDependency(optional, "target/${it}"))
         {
+            if (deploySignatures && getDependency(signature, "target/${it}-signature"))
+            {
+                assert deployFile(optional, 'target/pom', "target/${it}-signature", repoUrl, repoId);
+            }
             assert deployFile(optional, 'target/pom', "target/${it}", repoUrl, repoId);
-            assert deployFile(optional, 'target/pom', "target/${it}-signature", repoUrl, repoId);
         }
     }
 }
@@ -144,7 +152,7 @@ private boolean deployFile(Artifact artifact, String pomFile, String artifactFil
     return result
 }
 
-protected void deployCeDistributions(String version)
+protected void deployCeDistributions()
 {
     deployToRemote(ceRepoUrl, ceRepoId, "org.mule.distributions", "mule", version, "jar", "embedded")
     deployToRemote(ceRepoUrl, ceRepoId, "org.mule.distributions", "mule", version, "jar", "tests")
