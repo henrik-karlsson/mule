@@ -32,7 +32,7 @@ public interface HttpCallbackAdapter
     /**
      * Retrieves connector
      */
-    public Connector getConnector();
+    public Object getConnector();
 
     /**
      * Retrieves async
