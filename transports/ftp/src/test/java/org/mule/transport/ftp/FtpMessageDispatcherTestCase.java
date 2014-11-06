@@ -7,9 +7,15 @@
 package org.mule.transport.ftp;
 
 import org.mule.DefaultMuleMessage;
+import org.mule.api.MuleEvent;
 import org.mule.api.client.MuleClient;
+import org.mule.api.transport.OutputHandler;
+import org.mule.util.IOUtils;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.StringReader;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.CountDownLatch;
@@ -67,6 +73,29 @@ public class FtpMessageDispatcherTestCase extends AbstractFtpServerTestCase
         assertTrue(latch.await(RECEIVE_TIMEOUT, TimeUnit.MILLISECONDS));
 
         String[] filesOnServer = testDir.list();
+        assertTrue(filesOnServer.length > 0);
+    }
+
+    @Test
+    public void dispatchOutputHandler() throws Exception
+    {
+        MuleClient client = muleContext.getClient();
+        client.dispatch(getMuleFtpEndpoint(), new DefaultMuleMessage((Object)new OutputHandler()
+        {
+            public void write(MuleEvent event, OutputStream os) throws IOException
+            {
+            	try {
+					IOUtils.copy(new StringReader(TEST_MESSAGE), os);
+				} catch (Exception e) {
+					throw new IOException(e);
+				}
+            }
+        }, muleContext));
+
+        // check that the message arrived on the FTP server
+        assertTrue(latch.await(getTimeout(), TimeUnit.MILLISECONDS));
+
+        String[] filesOnServer = new File(FTP_SERVER_BASE_DIR).list();
         assertTrue(filesOnServer.length > 0);
     }
     
